@@ -106,9 +106,11 @@ tables from either 16S or metagenomic sequencing). The examples are from
 
 ## filter\_feature
 
+### ASVs
+
 Filters count table based on sequence abundance and prevalence. This
 function returns several outputs that detail which features were
-filtered out to help with quality control.
+filtered out to help with quality control. 
 
 There are three methods by which sequences can be filtered. For all
 three methods, the cut-off threshold is taken into consideration with
@@ -126,6 +128,8 @@ your dataset.
 \*Sequence prevalence is calculated as the number of samples in which
 sequence abundance is greater than or equal to the cut-off threshold.
 
+**NB** data_type must be set to 'asv'
+
 Usage:
 
 ``` r
@@ -138,7 +142,7 @@ count_df <- dss_example$merged_abundance_id %>%
 # set features in count tax to be in same order
 count_df <- count_df[tax_df$featureID,]
 
-filtered_ls <- filter_feature(count_df, tax_df, 'percent_sample', 0.001, 2)
+filtered_ls <- filter_feature(count_df, tax_df, 'percent_sample', 0.001, 2, data_type = 'asv')
 #> Kept 303/734 (41.28%) features with read counts >= 0.001% with sample total read count in >= 2/25 (8%) samples
 summary(filtered_ls)
 #>             Length Class      Mode     
@@ -163,6 +167,42 @@ kable(head(filtered_count[,1:4]))
 | ASV59  |  0.0004713 |  0.0010667 |  0.0011380 |  0.0000000 |
 | ASV62  |  0.0005656 |  0.0740628 |  0.0008535 |  0.0005923 |
 | ASV37  |  0.0029223 |  0.0000000 |  0.0000000 |  0.0000000 |
+
+### Metagenomics
+
+You can also use this for filtering metagenomics, which employs the same filtering options as above.
+
+**NB** data_type must be set to 'metagenomics'
+
+```r
+# Suppose you have a metagenomics feature count table:
+# counts_table <- ... # a dataframe with features in rows and samples in columns
+
+filtered_results <- filter_feature(count_df = counts_table, 
+                                   filter_method = 'percent_sample', 
+                                   cutoff = 0.01, 
+                                   prev_cutoff = 2, 
+                                   data_type = 'metagenomics')
+#> Kept X/Y (Z%) features with >= 0.01% of sample reads in >= 2/N (M%) samples
+
+summary(filtered_results)
+#>              Length Class      Mode     
+#> filtered     ...    -none-     numeric  
+#> p_agg        ...    gg         list     
+#> p_exp        ...    gg         list     
+#> feature_remove ...  -none-     character
+#> feature_keep  ...   -none-     character
+#> msg           1      -none-     character
+
+filtered_count <- filtered_results$filtered
+dim(filtered_count)
+#> [1] ... ...
+head(filtered_count)
+```
+
+
+</details>
+
 
 </details>
 

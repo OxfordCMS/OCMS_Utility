@@ -1,215 +1,193 @@
-#' filter_feature.R
+#' filter_feature
 #'
-#' filter out reads based on cutoff threshold and asv prevalence across samples
+#' Filter features from a count table based on abundance and prevalence criteria, 
+#' with adjustable behavior for ASV or metagenomics data.
 #'
-#' @param count_df dataframe. count table with samples in columns and
-#'     ASV in rows. feature ID in rownames.
-#' @param tax_df dataframe. featureID must match rownames \code{count_df}.
-#'     has columns \code{'featureID','Kingdom','Phylum',
-#'     'Class','Order','Family','Genus','Species'}
-#' @param filter_method default \code{"abs_count"} must be one of
-#'     \code{c("abs_count", "percent_sample", "percent_dataset")}.
-#'     Therefore, ASVs must reach a certain percentage of the entire dataset
-#' @param asv_cutoff cutoff used to filter sequences. features are kept when
-#'     they are greater than this cutoff
-#' @param prev_cutoff  prevalence cutoff. ASVs must reach the \code{asv_cutoff}
-#'     in at least this many samples to be kept.
+#' @param count_df dataframe. Count table with samples in columns and features in rows. Feature ID in rownames.
+#' @param tax_df dataframe. FeatureID must match rownames of \code{count_df}.
+#'     Required if \code{data_type = "asv"}. Contains columns \code{'featureID','Kingdom','Phylum',
+#'     'Class','Order','Family','Genus','Species'}.
+#' @param filter_method character. One of \code{"abs_count", "percent_sample", "percent_dataset"}.
+#'     Determines how the abundance cutoff is applied.
+#' @param cutoff numeric. The abundance threshold:
+#'     - If \code{filter_method = 'abs_count'}, it is the minimum read count.
+#'     - If \code{filter_method = 'percent_sample' or 'percent_dataset'}, it is the minimum relative abundance (0–100).
+#' @param prev_cutoff integer. The minimum number of samples in which a feature must meet the \code{cutoff} to be retained.
+#' @param data_type character. One of \code{"asv","metagenomics"}.
+#'     - If \code{"asv"}, the filtering includes taxonomic data and outputs a filtered taxonomy table.
+#'     - If \code{"metagenomics"}, taxonomy data is not used.
+#'
 #' @return
-#'     list of:
-#'     filtered_table - filtered
-#'     Also returns list of:
-#'     \code{p_agg} - plot of sequences removed/kept based on relative abundance
-#'     vs asv prevalence in aggregated (mean ASV relative abundance)
-#'     \code{p_exp} - expanded view (ASV relative abundance for every sample shown).
-#'     \code{feat_keep} - vector of ASVs remaining after filtering
-#'     \code{feat_remove} - vector of ASVs removed during filtering
+#'     A list containing:
+#'     \itemize{
+#'       \item \code{taxonomy}: Filtered taxonomy table (only if \code{data_type = "asv"}).
+#'       \item \code{filtered}: Filtered count table.
+#'       \item \code{p_agg}: Plot of features kept/removed based on aggregated abundance and prevalence.
+#'       \item \code{p_exp}: Expanded plot showing abundance in each sample.
+#'       \item \code{feature_keep}: Vector of features retained after filtering.
+#'       \item \code{feature_remove}: Vector of features removed during filtering.
+#'       \item \code{msg}: Summary message describing filtering results.
+#'     }
 #'
 #' @details
+#' Filtering is based on feature abundance and sample prevalence. 
+#' \code{filter_method} determines how \code{cutoff} is interpreted:
+#' \itemize{
+#'   \item \code{"abs_count"}: \code{cutoff} is an absolute read count.
+#'   \item \code{"percent_sample"}: \code{cutoff} is a percentage of each sample's total reads.
+#'   \item \code{"percent_dataset"}: \code{cutoff} is a percentage of the total reads in the entire dataset.
+#' }
 #'
-#' Filtering is performed based on read count and sample prevalence.
-#'     ASVs are kept if they pass the ASV count cut-off OR if they pass
-#'     the sample prevalence cut-off.
-#' \code{asv_cutoff = 'abs_count'} uses a read count as a threshold cutoff.
-#'     recommended default of \code{1}
-#' When \code{asv_cutoff} is set to \code{'percent_sample'} uses percent of
-#'     sample total read count as the threshold cutoff.
-#'     Therefore, ASVs must reach a certain percentage of a given sample.
-#'     Recommended default of \code{0.01} for 0.01% of each sample
-#' When \code{asv_cutoff} is set to \code{'percent_dataset'} uses percent
-#'     of dataset total read count as the threshold cutoff.
-#'     Recommended default of \code{0.01} for 0.01% of entire dataset
-#' \code{prev_cutoff} has minimum value of 1 (sequence must reach cutof in
-#'     at least 1 sample, which would not filter out any sequences).
-#'     Default value is set to 2, which is the most relaxed cutoff
-#'     A recommended default is the number of samples to make up 5% of total number of samples.
+#' \code{prev_cutoff} sets the minimum number of samples that must contain the feature at or above the \code{cutoff}.
+#'
+#' For \code{data_type = "asv"}, a taxonomy table is expected and included in the output.
+#' For \code{data_type = "metagenomics"}, no taxonomy table is needed or returned.
 #'
 #' @import tibble
 #' @import dplyr
+#' @import tidyr
+#' @import ggplot2
 #' @export
+#'
 #' @examples
-#' data(dss_example)
+#' # Example for ASV data:
+#' # data(dss_example)
+#' # tax_df <- dss_example$merged_taxonomy
+#' # count_df <- dss_example$merged_abundance_id %>%
+#' #   column_to_rownames('featureID')
+#' # filtered_ls <- filter_feature(count_df, tax_df, 'percent_sample', 0.001, 2, data_type = 'asv')
 #'
-#' # put featureID as rownames
-#' tax_df <- dss_example$merged_taxonomy
-#' count_df <- dss_example$merged_abundance_id %>%
-#'   column_to_rownames('featureID')
-#' # set features in count tax to be in same order
-#' count_df <- count_df[tax_df$featureID,]
-#'
-#' filtered_ls <- filter_feature(count_df, tax_df, 'percent_sample', 0.001, 2)
-#' summary(filtered_ls)
-#' filtered_count <- filtered_ls$filtered
-#' dim(filtered_count)
-#' head(filtered_count)
-
-filter_feature <- function(count_df, tax_df,
-                          filter_method = 'abs_count',
-                          asv_cutoff = 1, prev_cutoff = 2) {
-
-  tax_level <- c('Kingdom','Phylum','Class','Order', 'Family','Genus',
-                 'Species','featureID')
-
-  # set x axis scale to 1 decimal
-  scaleFUN <- function(x) sprintf("%.0f", x)
+#' # Example for metagenomics data:
+#' # Suppose counts_table is a count matrix of metagenomics features:
+#' # filtered_results <- filter_feature(count_df = counts_table, filter_method = 'percent_sample', 
+#' #                                    cutoff = 0.01, prev_cutoff = 2, data_type = 'metagenomics')
+filter_feature <- function(count_df, tax_df = NULL,
+                           filter_method = 'abs_count',
+                           cutoff = 1, prev_cutoff = 2,
+                           data_type = 'asv') {
 
   # input checks ---------------------------------------------------------------
-  # count_df must be dataframe
-  if(class(count_df) != 'data.frame') {
-    stop("count_df must be dataframe")
+  if(!data_type %in% c('asv','metagenomics')) {
+    stop("data_type must be 'asv' or 'metagenomics'")
   }
 
-  # filter_method must be one of "abs_count" "percent_sample" "percent_dataset
+  if(class(count_df) != 'data.frame') {
+    stop("count_df must be a dataframe")
+  }
+
   if(!filter_method %in% c('abs_count','percent_sample','percent_dataset')) {
     stop("filter_method must be 'abs_count','percent_sample', or 'percent_dataset'")
   }
 
-  # prev_cutoff must be integer between 0 and max number of samples
   if(prev_cutoff > ncol(count_df)) {
     stop("prev_cutoff cannot exceed the number of samples")
   }
 
   if(filter_method == 'abs_count') {
-    # asv_cutoff must be integer when filter_method == 'abs_count'
-    if(asv_cutoff %% 1 != 0) {
-      stop("asv_cutoff must be an integer when filter_method = 'abs_count'")
+    if(cutoff %% 1 != 0) {
+      stop("cutoff must be an integer when filter_method = 'abs_count'")
     }
-    # asv_cutoff must not be greater than the max number of reads when filter_method = 'abs_count'
-    if(asv_cutoff > max(count_df)) {
-      stop("asv_cutoff cannot be greater than the maximum number of reads when filter_method = 'abs_count'")
+    if(cutoff > max(count_df)) {
+      stop("cutoff cannot be greater than the maximum number of reads when filter_method = 'abs_count'")
     }
   } else {
-    # asv_cutoff must be between 0-100 when filter_method relies on percent
-    if(asv_cutoff < 0 | asv_cutoff > 100) {
-      stop("asv_cutoff must be between 0-100 when filter_method is 'percent_sample' or 'percent_dataset'")
+    if(cutoff < 0 | cutoff > 100) {
+      stop("cutoff must be between 0-100 when filter_method is 'percent_sample' or 'percent_dataset'")
     }
   }
 
-  # check order of count_df is same as order of tax_df
-  if(!identical(rownames(count_df), tax_df$featureID)) {
-    stop("Order of features in count_df and tax_df must be identical")
+  if(data_type == 'asv') {
+    if(is.null(tax_df)) {
+      stop("tax_df is required when data_type = 'asv'")
+    }
+    if(!identical(rownames(count_df), tax_df$featureID)) {
+      stop("Order of features in count_df and tax_df must be identical")
+    }
   }
 
-  # calculate different relative abundances-------------------------------------
-  relab_by_sample <- apply(count_df, 2, function(x) x/sum(x))
+  # calculate relative abundances -----------------------------------------------
+  relab_by_sample <- apply(count_df, 2, function(x) x / sum(x))
   relab_by_data <- count_df / sum(count_df)
+  prev_data <- rowSums(count_df != 0)
 
-  # calculate prevalence based on cutoff set and perform filtering-------------
-  binary <- (count_df != 0) * 1 # true means present
-  prev_data <- rowSums(binary)
-
-  # perform filtering-----------------------------------------------------------
+  # perform filtering ----------------------------------------------------------
   filtered_count <- switch(
     filter_method,
-    # count cut-off
-    abs_count = count_df[rowSums(count_df >= asv_cutoff) >= prev_cutoff,],
-    # cut-off based on percent of sample total
-    percent_sample = relab_by_sample[rowSums(relab_by_sample >= asv_cutoff) >= prev_cutoff,],
-    # cut-off based on percent of dataset total
-    percent_total = relab_by_data[rowSums(relab_by_data >= asv_cutoff) >= prev_cutoff,]
+    abs_count = count_df[rowSums(count_df >= cutoff) >= prev_cutoff,],
+    percent_sample = relab_by_sample[rowSums(relab_by_sample >= cutoff) >= prev_cutoff,],
+    percent_dataset = relab_by_data[rowSums(relab_by_data >= cutoff) >= prev_cutoff,]
   )
 
   if(is.null(filtered_count)) {
     stop("No features remain after filtering. Please select different filter cutoff.")
   }
-  # secondary check for samples with no reads-----------------------------------
+
+  # remove samples with no reads -----------------------------------------------
   sampleID <- colnames(filtered_count)
   empty_sample_ind <- which(colSums(filtered_count)==0)
-
   if(length(empty_sample_ind) > 0) {
-    filtered_count <- filtered_count[,sampleID[-empty_sample_ind]]
-
-    msg <- sprintf("%s samples contained 0 reads after ASV filtering. The following samples have been removed: %s", length(empty_sample_ind), paste(sampleID[empty_sample_ind], collapse="\n"))
-
-    message(msg)
+    filtered_count <- filtered_count[, sampleID[-empty_sample_ind]]
+    message(sprintf("%s samples contained 0 reads after filtering and have been removed: %s",
+                    length(empty_sample_ind), paste(sampleID[empty_sample_ind], collapse=", ")))
   }
 
-  # secondary check for empty asvs----------------------------------------------
-  # identify empty asvs
+  # remove empty features ------------------------------------------------------
   featID <- rownames(filtered_count)
   empty_feat_ind <- which(rowSums(filtered_count)==0)
-
   if(length(empty_feat_ind) > 0) {
     filtered_count <- filtered_count[featID[-empty_feat_ind],]
-    msg <- sprintf("%s asvs contained 0 reads in all samples after ASV filtering. The following asvs have been removed: %s", length(empty_feat_ind), paste(featID[empty_feat_ind], collapse="\n"))
-
-    message(msg)
-
+    message(sprintf("%s features contained 0 reads after filtering and have been removed: %s",
+                    length(empty_feat_ind), paste(featID[empty_feat_ind], collapse=", ")))
   }
 
-  # recording asvs kept and removed---------------------------------------------
-  feat_keep <- rownames(filtered_count)
-  feat_remove <- setdiff(rownames(count_df), rownames(filtered_count))
+  # record kept and removed features -------------------------------------------
+  feature_keep <- rownames(filtered_count)
+  feature_remove <- setdiff(rownames(count_df), rownames(filtered_count))
 
-  # filter taxonomy table-------------------------------------------------------
-  tax_filtered <- tax_df %>%
-    filter(featureID %in% feat_keep)
+  # filter taxonomy if asv -----------------------------------------------------
+  if(data_type == 'asv') {
+    tax_filtered <- tax_df %>%
+      filter(featureID %in% feature_keep)
+  } else {
+    tax_filtered <- NULL
+  }
 
-  # preparing plot data---------------------------------------------------------
-
+  # preparing plot data --------------------------------------------------------
   if(filter_method == 'abs_count') {
-    pdata <-  count_df %>%
-      tibble::rownames_to_column('featureID') %>%
-      gather('sampleID','value', -featureID)
+    pdata_val <- count_df
     ylab <- 'Read count'
-  }
-  if(filter_method == 'percent_total') {
-    pdata <- relab_by_data %>%
-      as.data.frame() %>%
-      tibble::rownames_to_column('featureID') %>%
-      gather('sampleID','value', -featureID)
+  } else if(filter_method == 'percent_dataset') {
+    pdata_val <- relab_by_data
     ylab <- 'Relative abundance\n(% of total reads)'
-  }
-  if(filter_method == 'percent_sample') {
-    pdata <- relab_by_sample %>%
-      as.data.frame() %>%
-      tibble::rownames_to_column('featureID') %>%
-      gather('sampleID','value', -featureID)
+  } else {
+    pdata_val <- relab_by_sample
     ylab <- 'Relative abundance\n(% of sample)'
   }
 
-  pdata <- pdata %>%
+  pdata <- pdata_val %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column('featureID') %>%
+    pivot_longer(cols = -featureID, names_to = 'sampleID', values_to = 'value') %>%
     left_join(enframe(prev_data, 'featureID','prevalence'), 'featureID') %>%
-    mutate(colour = ifelse(featureID %in% feat_keep,
-                           'to keep', 'to remove'))
+    mutate(colour = ifelse(featureID %in% feature_keep, 'to keep', 'to remove'))
 
-  # plot aggregated view--------------------------------------------------------
   pdata_agg <- pdata %>%
     group_by(featureID) %>%
     mutate(y = mean(value)) %>%
     distinct(prevalence, y, colour)
 
+  scaleFUN <- function(x) sprintf("%.0f", x)
+
   p_agg <- ggplot(pdata_agg, aes(x = prevalence, y = y, colour = colour)) +
     geom_point(alpha = 0.5, size = 2) +
-    xlab('ASV prevalence (# of samples)') +
+    xlab('Feature prevalence (# of samples)') +
     ylab(sprintf("Mean %s", ylab)) +
     scale_x_continuous(labels = scaleFUN, limits = c(0, ncol(count_df))) +
     scale_y_continuous(trans = 'log10') +
     theme_bw(12) +
     theme(legend.position = 'bottom')
 
-  # plot expanded view----------------------------------------------------------
-  p_exp <- ggplot(pdata,
-                  aes(x = prevalence, y = value, colour = colour)) +
+  p_exp <- ggplot(pdata, aes(x = prevalence, y = value, colour = colour)) +
     geom_point(alpha = 0.5, size = 2) +
     xlab('Feature prevalence (# of samples)') +
     ylab(ylab) +
@@ -218,27 +196,41 @@ filter_feature <- function(count_df, tax_df,
     theme_bw(12) +
     theme(legend.position = 'bottom')
 
-  # filter message--------------------------------------------------------------
-  msg1 <- length(feat_keep)
+  # summary message ------------------------------------------------------------
+  msg1 <- length(feature_keep)
   msg2 <- nrow(count_df)
   msg3 <- round(msg1 / msg2 * 100, 2)
-  msg4 <- asv_cutoff
+  msg4 <- cutoff
   msg5 <- prev_cutoff
   msg6 <- ncol(count_df)
   msg7 <- round(msg5 / msg6 * 100, 1)
 
   if(filter_method == 'abs_count') {
-    msg <- sprintf('Kept %s/%s (%s%%) features with read counts >= %s with total read count in >= %s/%s (%s%%) samples', msg1, msg2, msg3, msg4, msg5, msg6, msg7)
+    msg <- sprintf('Kept %s/%s (%s%%) features with read counts >= %s in >= %s/%s (%s%%) samples', 
+                   msg1, msg2, msg3, msg4, msg5, msg6, msg7)
   } else if(filter_method == 'percent_dataset') {
-    msg <- sprintf('Kept %s/%s (%s%%) features with read counts >= %s%% with dataset total read count in >= %s/%s (%s%%) samples', msg1, msg2, msg3, msg4, msg5, msg6, msg7)
+    msg <- sprintf('Kept %s/%s (%s%%) features with >= %s%% of dataset reads in >= %s/%s (%s%%) samples', 
+                   msg1, msg2, msg3, msg4, msg5, msg6, msg7)
   } else if(filter_method == 'percent_sample') {
-    msg <- sprintf('Kept %s/%s (%s%%) features with read counts >= %s%% with sample total read count in >= %s/%s (%s%%) samples', msg1, msg2, msg3, msg4, msg5, msg6, msg7)
+    msg <- sprintf('Kept %s/%s (%s%%) features with >= %s%% of sample reads in >= %s/%s (%s%%) samples', 
+                   msg1, msg2, msg3, msg4, msg5, msg6, msg7)
   }
 
   message(msg)
 
+  # return ---------------------------------------------------------------------
+  res <- list(
+    'filtered' = filtered_count,
+    'p_agg' = p_agg,
+    'p_exp' = p_exp,
+    'feature_remove' = feature_remove,
+    'feature_keep' = feature_keep,
+    'msg' = msg
+  )
+  
+  if(data_type == 'asv') {
+    res$taxonomy <- tax_filtered
+  }
 
-  return(list('taxonomy' = tax_filtered, 'filtered' = filtered_count,
-              'p_agg'=p_agg, 'p_exp'=p_exp, 'feat_remove'=feat_remove,
-              'feat_keep' = feat_keep, 'msg' = msg))
+  return(res)
 }
