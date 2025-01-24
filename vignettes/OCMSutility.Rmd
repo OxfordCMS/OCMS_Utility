@@ -884,33 +884,25 @@ met_sparse[[4]]
 </details>
 
 <details>
-    <summary>metadata sparsity</summary>
-    
-## top_taxa
-This returns the top most represented taxa, based on cumulative relative abundance. Cumulative sums are calculated on a per-sample basis, so taxa that passes the cumulative sum threshold in any sample are retained. For example, giving the taxa that are in the top 80% abundance in any of the samples.
+  <summary>alpha diversity</summary>
+
+## alpha_diversity
+
+This function calculates alpha diversity metrics: Shannon's H, Shannon's D, richness, and evenness. Calculations are made using vegan and equations in [Jost et al, 2006](https://doi.org/10.1111/j.2006.0030-1299.14714.x). 
 
 Usage:
-Takes in dataframe or matrix of relative abundance, with samples in columns, taxa in rows. Function returns dataframe of taxa, sample_id, relative abundance, and cumulative sum of relative abundance.
+Takes in count table, with samples in columns, and features in rows. Feature IDs are in rownames.
 
-```{r top-taxa}
-# put asv relative abundance features in same order as taxonomy table
-# get relative abundance data
-asv_mat <- dss_example$merged_abundance_id[,2:ncol(dss_example$merged_abundance_id)]
-rownames(asv_mat) <- dss_example$merged_abundance_id$featureID
-relab_data <- relab(asv_mat)
-# match row order of relative abundance and taxonomy data
-relab_data <- relab_data[match(dss_example$merged_taxonomy$featureID,
-                               rownames(relab_data)),] 
-# prepend X to column names
-colnames(relab_data) <- sprintf("X%s", colnames(relab_data))
-# get genus-level relative abundance
-genus_df <- aggregate_count(relab_data, dss_example$merged_taxonomy, 'Genus')$count_df
+```{r alpha-diversity}
+# get example data
+data(asv_example)
+# rownames have to be features
+asv_counts <- data.frame(asv_example[2:ncol(asv_example)],
+                         row.names=asv_example$sequence)
+alpha_div <- alpha_diversity(asv_counts)
 
-# get top taxa
-top80 <- top_taxa(genus_df, cutoff=0.8)
-print(top80[top80$sample_id == unique(top80$sample_id)[1],])
+head(alpha_div)
 ```
-
 </details>
 
 # Utility

@@ -615,7 +615,8 @@ p <- plot_data$p +
 #> Scale for colour is already present.
 #> Adding another scale for colour, which will replace the existing scale.
 p
-#> Warning: The `guide` argument in `scale_*()` cannot be `FALSE`. This was deprecated in ggplot2 3.3.4.
+#> Warning: The `guide` argument in `scale_*()` cannot be `FALSE`. This was deprecated in ggplot2
+#> 3.3.4.
 #> i Please use "none" instead.
 #> i The deprecated feature was likely used in the OCMSutility package.
 #>   Please report the issue to the authors.
@@ -1414,6 +1415,36 @@ met_sparse[[4]]
 
 <details>
 
+<<<<<<< HEAD
+<summary>alpha diversity</summary>
+
+## alpha\_diversity
+
+This function calculates alpha diversity metrics: Shannon’s H, Shannon’s
+D, richness, and evenness. Calculations are made using vegan and
+equations in [Jost et
+al, 2006](https://doi.org/10.1111/j.2006.0030-1299.14714.x).
+
+Usage: Takes in count table, with samples in columns, and features in
+rows. Feature IDs are in rownames.
+
+``` r
+# get example data
+data(asv_example)
+# rownames have to be features
+asv_counts <- data.frame(asv_example[2:ncol(asv_example)],
+                         row.names=asv_example$sequence)
+alpha_div <- alpha_diversity(asv_counts)
+
+head(alpha_div)
+#>   sample_id  shannonH  shannonD richness  evenness
+#> 1     AG001 3.3737486 29.187736       49 0.8668819
+#> 2     AG002 1.8139865  6.134855       16 0.6542573
+#> 3     AG003 1.8167867  6.152059       16 0.6552673
+#> 4     AG004 1.7809029  5.935213       15 0.6576329
+#> 5     AG005 2.2661195  9.641913       22 0.7331247
+#> 6     AG006 0.6751426  1.964313        2 0.9740249
+=======
 <summary>metadata sparsity</summary>
 
 ## top\_taxa
@@ -1460,6 +1491,7 @@ print(top80[top80$sample_id == unique(top80$sample_id)[1],])
 #>  8 Clostridium XlVa     X4DSS__24  1.11   92.6
 #>  9 Parabacteroides      X4DSS__24  1.03   93.7
 #> 10 Alistipes            X4DSS__24  0.853  94.5
+>>>>>>> {SY}resolve
 ```
 
 </details>

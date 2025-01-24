@@ -3,6 +3,7 @@
 export(adjust_mat_pval)
 export(aggregateCount)
 export(aggregate_count)
+export(alpha_diversity)
 export(annotated_dendrogram)
 export(bcdissimilarity)
 export(clr)
