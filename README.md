@@ -616,8 +616,8 @@ p <- plot_data$p +
 #> Adding another scale for colour, which will replace the existing scale.
 p
 #> Warning: The `guide` argument in `scale_*()` cannot be `FALSE`. This was deprecated in ggplot2 3.3.4.
-#> i Please use "none" instead.
-#> i The deprecated feature was likely used in the OCMSutility package.
+#> ℹ Please use "none" instead.
+#> ℹ The deprecated feature was likely used in the OCMSutility package.
 #>   Please report the issue to the authors.
 #> This warning is displayed once every 8 hours.
 #> Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated.
@@ -666,9 +666,9 @@ features <- sample(rownames(asv_clr), size=4)
 featurebox(abundance_matrix=asv_clr, metadata=metadata, features=features, group_by="Group")
 #> Using feature as id variables
 #> Warning: Use of `mat.m$covariate` is discouraged.
-#> i Use `covariate` instead.
+#> ℹ Use `covariate` instead.
 #> Use of `mat.m$covariate` is discouraged.
-#> i Use `covariate` instead.
+#> ℹ Use `covariate` instead.
 ```
 
 ![](vignettes/OCMSutility_files/figure-markdown_strict/featurebox-1.png)
@@ -685,9 +685,9 @@ featurebox(abundance_matrix=asv_clr, metadata=metadata, features=features, group
 #> Scale for colour is already present.
 #> Adding another scale for colour, which will replace the existing scale.
 #> Warning: Use of `mat.m$covariate` is discouraged.
-#> i Use `covariate` instead.
+#> ℹ Use `covariate` instead.
 #> Use of `mat.m$covariate` is discouraged.
-#> i Use `covariate` instead.
+#> ℹ Use `covariate` instead.
 ```
 
 ![](vignettes/OCMSutility_files/figure-markdown_strict/featurebox_colour-1.png)
@@ -1414,52 +1414,34 @@ met_sparse[[4]]
 
 <details>
 
-<summary>metadata sparsity</summary>
+<summary>alpha diversity</summary>
 
-## top\_taxa
+## alpha\_diversity
 
-This returns the top most represented taxa, based on cumulative relative
-abundance. Cumulative sums are calculated on a per-sample basis, so taxa
-that passes the cumulative sum threshold in any sample are retained. For
-example, giving the taxa that are in the top 80% abundance in any of the
-samples.
+This function calculates alpha diversity metrics: Shannon’s H, Shannon’s
+D, richness, and evenness. Calculations are made using vegan and
+equations in [Jost et
+al, 2006](https://doi.org/10.1111/j.2006.0030-1299.14714.x).
 
-Usage: Takes in dataframe or matrix of relative abundance, with samples
-in columns, taxa in rows. Function returns dataframe of taxa,
-sample\_id, relative abundance, and cumulative sum of relative
-abundance.
+Usage: Takes in count table, with samples in columns, and features in
+rows. Feature IDs are in rownames.
 
 ``` r
-# put asv relative abundance features in same order as taxonomy table
-# get relative abundance data
-asv_mat <- dss_example$merged_abundance_id[,2:ncol(dss_example$merged_abundance_id)]
-rownames(asv_mat) <- dss_example$merged_abundance_id$featureID
-relab_data <- relab(asv_mat)
-# match row order of relative abundance and taxonomy data
-relab_data <- relab_data[match(dss_example$merged_taxonomy$featureID,
-                               rownames(relab_data)),] 
-# prepend X to column names
-colnames(relab_data) <- sprintf("X%s", colnames(relab_data))
-# get genus-level relative abundance
-genus_df <- aggregate_count(relab_data, dss_example$merged_taxonomy, 'Genus')$count_df
+# get example data
+data(asv_example)
+# rownames have to be features
+asv_counts <- data.frame(asv_example[2:ncol(asv_example)],
+                         row.names=asv_example$sequence)
+alpha_div <- alpha_diversity(asv_counts)
 
-# get top taxa
-top80 <- top_taxa(genus_df, cutoff=0.8)
-print(top80[top80$sample_id == unique(top80$sample_id)[1],])
-#> # A tibble: 10 x 4
-#> # Groups:   sample_id [1]
-#>    taxa                 sample_id  relab  csum
-#>    <chr>                <chr>      <dbl> <dbl>
-#>  1 Bacteroides          X4DSS__24 73.1    73.1
-#>  2 NA                   X4DSS__24  5.09   78.2
-#>  3 Lactobacillus        X4DSS__24  3.93   82.1
-#>  4 Akkermansia          X4DSS__24  3.90   86.0
-#>  5 Escherichia/Shigella X4DSS__24  2.16   88.2
-#>  6 Helicobacter         X4DSS__24  1.94   90.1
-#>  7 Faecalitalea         X4DSS__24  1.41   91.5
-#>  8 Clostridium XlVa     X4DSS__24  1.11   92.6
-#>  9 Parabacteroides      X4DSS__24  1.03   93.7
-#> 10 Alistipes            X4DSS__24  0.853  94.5
+head(alpha_div)
+#>   sample_id  shannonH  shannonD richness  evenness
+#> 1     AG001 3.3737486 29.187736       49 0.8668819
+#> 2     AG002 1.8139865  6.134855       16 0.6542573
+#> 3     AG003 1.8167867  6.152059       16 0.6552673
+#> 4     AG004 1.7809029  5.935213       15 0.6576329
+#> 5     AG005 2.2661195  9.641913       22 0.7331247
+#> 6     AG006 0.6751426  1.964313        2 0.9740249
 ```
 
 </details>
